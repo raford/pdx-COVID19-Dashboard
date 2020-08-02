@@ -1,0 +1,274 @@
+---
+title: "Portland metropolitan area COVID19 dashboard"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    source_code: https://github.com/raford/pdx-COVID19-Dashboard
+    social: ["twitter", "facebook", "linkedin"]
+runtime: shiny
+---
+
+```{r requiredPackages, include=FALSE}
+library(flexdashboard)
+library(shiny)
+library(rmarkdown)
+library(plotly)
+
+```
+
+```{r neededFunctions}
+# Compute new values
+get.new.vals <- function(cum.vec) {
+  # This function will compute new values from one unit of time when given a
+  # numeric vector.
+  # ----------
+  # INPUTS
+  # cum.vec := a numeric vector containing cummulative values.
+  # ----------
+  # OUTPUT
+  # A vector containing the differenced values from time k+1 and time k, where
+  # k is an integer of unit time. NOTE: It is assumed that the difference
+  # between time 2 and time 1 is zero. This assumption may not be valid for all
+  # types of analyses.
+  ind.vals <- diff(cum.vec)
+  return(c(cum.vec[1], ind.vals))
+}
+
+# Simple moving average function
+sma <- function(x, period) {
+  # This function will compute a simple moving average of a period equal to
+  # period.
+  # ----------
+  # INPUTS
+  # x      := a numeric vector.
+  # period := a numerical value that specifies the time period to be used for
+  #           the moving average.
+  # ----------
+  # OUPUT
+  # A vector containing the moving average values. Values for which a moving 
+  # average could not be computed will have an NA placed in their position.
+  dat.vec <- x
+  back.len <- period
+  vals <- c(rep(x=NA, times=back.len-1))
+  for (i in back.len:length(dat.vec)) {
+    start <- i-(back.len-1) # Start index
+    end <- i # End index
+    #print(start:end) # Okay
+    #print(length(start:end)) # Okay
+    #print(dat.vec[start:end])  
+    value <- sum(dat.vec[start:end]) / back.len
+    vals <- c(vals, value)
+  }
+  return(vals)
+}
+
+# County data reformatting function
+get.county.data <- function(df, county.name, state.name) {
+  # This function will create a subset of the data to be used based on the
+  # specified County and State and reformat that subset into a more desireable
+  # format. We remove the "fips" column as we do not need this data.
+  # ----------
+  # INPUTS
+  # df          := a data frame containing both state and county level data.
+  # county.name := the desired county name. Must be a string.
+  # state.name  := the desired state name. Must be a string.
+  # ----------
+  # OUTPUT
+  # A dataframe containing the data for the county and state provided as an
+  # argument.
+  sub.set <- subset(df, county==county.name & state==state.name)[, -4]
+  rownames(sub.set) <- NULL
+  names(sub.set) <- c("Date", "County", "State", "TotalCases", "TotalDeaths")
+  sub.set$NewCases <- get.new.vals(sub.set$TotalCases)
+  sub.set$NewDeaths <- get.new.vals(sub.set$TotalDeaths)
+  sub.set$Avg7DayNewCases <- sma(sub.set$NewCases, 7)
+  sub.set$Avg7DayNewDeaths <- sma(sub.set$NewDeaths, 7)
+  return(sub.set)
+}
+
+make.plot <- function(df, xvals, yvals, y.sma, Title, max.y) {
+  #New cases/deaths
+  the.plot <- ggplot(df, aes(x=xvals, y=yvals)) +
+  geom_area(aes(color = "orange", fill = "orange"),
+            alpha = 0.5, position = position_dodge(0.5)) +
+  coord_cartesian(ylim = c(0, max.y)) +
+  scale_x_date(date_labels = "%Y %b %d") +
+  scale_color_manual(values = c("orange")) +
+  scale_fill_manual(values = c("orange")) +
+  theme(axis.title.x=element_blank(), axis.title.y = element_blank(),
+        legend.position = "none", plot.title = element_text(hjust = 0.5)) +
+  geom_line(aes(x=xvals, y=y.sma), color="blue", size=0.75) +
+  annotate("text", x=as.Date(mult.dat$Date[50]), y=max.y/1.1, label=Title)
+  return(the.plot)
+}
+
+cum.plot <- function(df, xvals, yvals, Title, max.y) {
+  # Cumulative values plot
+  the.plot <- ggplot(df, aes(x=xvals, y=yvals)) +
+  geom_area(aes(color = "orange", fill = "orange"),
+            alpha = 0.5, position = position_dodge(0.5)) +
+  coord_cartesian(ylim = c(0, max.y)) +
+  scale_x_date(date_labels = "%Y %b %d") +
+  scale_color_manual(values = c("orange")) +
+  scale_fill_manual(values = c("orange")) +
+  theme(axis.title.x=element_blank(), axis.title.y = element_blank(),
+        legend.position = "none", plot.title = element_text(hjust = 0.5)) +
+  annotate("text", x=as.Date(mult.dat$Date[50]), y=max.y/1.1, label=Title)
+  return(the.plot)
+}
+```
+
+```{r makeData}
+
+dat <- read.csv("https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties.csv")
+
+mult.dat <- get.county.data(dat, county.name="Multnomah", state.name="Oregon")
+clack.dat <- get.county.data(dat, county.name="Clackamas", state.name="Oregon")
+wash.dat <- get.county.data(dat, county.name="Washington", state.name="Oregon")
+clark.dat <- get.county.data(dat, county.name="Clark", state.name="Washington")
+
+rm(dat)
+```
+
+Cases
+=====================================
+Row {.tabset .tabset-fade}
+-------------------------------------
+   
+### New Cases by County (with 7-day Moving Average)
+
+```{r}
+max.t.new.cases <- max(mult.dat$NewCases, wash.dat$NewCases,
+                       clark.dat$NewCases, clack.dat$NewCases)
+
+mult.new.cases <- make.plot(df=mult.dat, xvals=as.Date(mult.dat$Date),
+                    yvals=mult.dat$NewCases, y.sma=mult.dat$Avg7DayNewCases,
+                    Title="Multnomah County, OR", max.y=max.t.new.cases)
+
+wash.new.cases <- make.plot(df=wash.dat, xvals=as.Date(wash.dat$Date),
+                    yvals=wash.dat$NewCases, y.sma=wash.dat$Avg7DayNewCases,
+                    Title="Washington County, OR", max.y=max.t.new.cases)
+
+clark.new.cases <- make.plot(df=clark.dat, xvals=as.Date(clark.dat$Date),
+                    yvals=clark.dat$NewCases, y.sma=clark.dat$Avg7DayNewCases,
+                    Title="Clark County, WA", max.y=max.t.new.cases)
+
+clack.new.cases <- make.plot(df=clack.dat, xvals=as.Date(clack.dat$Date),
+                    yvals=clack.dat$NewCases, y.sma=clack.dat$Avg7DayNewCases,
+                    Title="Clackamas County, OR", max.y=max.t.new.cases)
+
+subplot(mult.new.cases, wash.new.cases, clark.new.cases, clack.new.cases, 
+        nrows=2, shareX=TRUE, shareY=TRUE)
+```   
+
+### Cumulative Cases by County
+```{r}
+max.t.cum.cases <- max(mult.dat$TotalCases, wash.dat$TotalCases,
+                       clark.dat$TotalCases, clack.dat$TotalCases)
+
+mult.cum.cases <- cum.plot(df=mult.dat, xvals=as.Date(mult.dat$Date),
+                    yvals=mult.dat$TotalCases, Title="Multnomah County, OR",
+                    max.y=max.t.cum.cases)
+
+wash.cum.cases <- cum.plot(df=wash.dat, xvals=as.Date(wash.dat$Date),
+                    yvals=wash.dat$TotalCases, Title="Washington County, OR",
+                    max.y=max.t.cum.cases)
+
+clark.cum.cases <- cum.plot(df=clark.dat, xvals=as.Date(clark.dat$Date),
+                    yvals=clark.dat$TotalCases, Title="Clark County, WA",
+                    max.y=max.t.cum.cases)
+
+clack.cum.cases <- cum.plot(df=clack.dat, xvals=as.Date(clack.dat$Date),
+                    yvals=clack.dat$TotalCases, Title="Clackamas County, OR",
+                    max.y=max.t.cum.cases)
+
+subplot(mult.cum.cases, wash.cum.cases, clark.cum.cases, clack.cum.cases, 
+        nrows=2, shareX=TRUE, shareY=TRUE)
+```
+
+
+Deaths
+=====================================
+Row {.tabset .tabset-fade}
+-------------------------------------
+   
+### New Deaths by County (with 7-day Moving Average)
+
+```{r}
+max.t.new.deaths <- max(mult.dat$NewDeaths, wash.dat$NewDeaths,
+                       clark.dat$NewDeaths, clack.dat$NewDeaths)
+
+mult.new.deaths <- make.plot(df=mult.dat, xvals=as.Date(mult.dat$Date),
+                    yvals=mult.dat$NewDeaths, y.sma=mult.dat$Avg7DayNewDeaths,
+                    Title="Multnomah County, OR", max.y=max.t.new.deaths)
+
+wash.new.deaths <- make.plot(df=wash.dat, xvals=as.Date(wash.dat$Date),
+                    yvals=wash.dat$NewDeaths, y.sma=wash.dat$Avg7DayNewDeaths,
+                    Title="Washington County, OR", max.y=max.t.new.deaths)
+
+clark.new.deaths <- make.plot(df=clark.dat, xvals=as.Date(clark.dat$Date),
+                    yvals=clark.dat$NewDeaths, y.sma=clark.dat$Avg7DayNewDeaths,
+                    Title="Clark County, WA", max.y=max.t.new.deaths)
+
+clack.new.deaths <- make.plot(df=clack.dat, xvals=as.Date(clack.dat$Date),
+                    yvals=clack.dat$NewDeaths, y.sma=clack.dat$Avg7DayNewDeaths,
+                    Title="Clackamas County, OR", max.y=max.t.new.deaths)
+
+subplot(mult.new.deaths, wash.new.deaths, clark.new.deaths, clack.new.deaths, 
+        nrows=2, shareX=TRUE, shareY=TRUE)
+```   
+
+### Cumulative Deaths
+```{r}
+max.t.cum.deaths <- max(mult.dat$TotalDeaths, wash.dat$TotalDeaths,
+                       clark.dat$TotalDeaths, clack.dat$TotalDeaths)
+
+mult.cum.deaths <- cum.plot(df=mult.dat, xvals=as.Date(mult.dat$Date),
+                    yvals=mult.dat$TotalDeaths, Title="Multnomah County, OR",
+                    max.y=max.t.cum.deaths)
+
+wash.cum.deaths <- cum.plot(df=wash.dat, xvals=as.Date(wash.dat$Date),
+                    yvals=wash.dat$TotalDeaths, Title="Washington County, OR",
+                    max.y=max.t.cum.deaths)
+
+clark.cum.deaths <- cum.plot(df=clark.dat, xvals=as.Date(clark.dat$Date),
+                    yvals=clark.dat$TotalDeaths, Title="Clark County, WA",
+                    max.y=max.t.cum.deaths)
+
+clack.cum.deaths <- cum.plot(df=clack.dat, xvals=as.Date(clack.dat$Date),
+                    yvals=clack.dat$TotalDeaths, Title="Clackamas County, OR",
+                    max.y=max.t.cum.deaths)
+
+subplot(mult.cum.deaths, wash.cum.deaths, clark.cum.deaths, clack.cum.deaths, 
+        nrows=2, shareX=TRUE, shareY=TRUE)
+```
+
+Data
+=====================================
+Row {.tabset .tabset-fade}
+-------------------------------------
+
+### Multnomah County, OR
+```{r}
+renderTable(mult.dat)
+```
+
+### Washington County, OR
+```{r}
+renderTable(wash.dat)
+```
+
+### Clark County, WA
+```{r}
+renderTable(clark.dat)
+```
+
+### Clackamas County, OR
+```{r}
+renderTable(clack.dat)
+```
+
+
+About
+=====================================
+Words here about this dashboard.
