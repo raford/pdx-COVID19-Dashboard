@@ -13,7 +13,6 @@ library(flexdashboard)
 library(shiny)
 library(rmarkdown)
 library(plotly)
-
 ```
 
 ```{r neededFunctions}
@@ -271,4 +270,10 @@ renderTable(clack.dat)
 
 About
 =====================================
-Words here about this dashboard.
+This dashboard is currently a work-in-progress.
+
+I hope to have this About section updated no later than 26 August 2020.
+
+Data: Data comes from the NYT COVID data respository on GitHub: https://github.com/nytimes/covid-19-data
+
+Questions/comments/concerns: Email me at raymond.anthony.ford@gmail.com
